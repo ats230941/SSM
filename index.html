@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Inventory & Smart Shopping Manager</title>
+
+    <!-- Manifest for PWA Support -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- External Stylesheet -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- Dexie.js for IndexedDB -->
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js" defer></script>
+    <!-- Chart.js for Visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+
+    <!-- Application Modules -->
+    <script type="module" src="js/db.js" defer></script>
+    <script type="module" src="js/app.js" defer></script>
+</head>
+<body>
+
+    <!-- Header & Navigation Shell -->
+    <header>
+        <h1>Smart Shopping Manager</h1>
+        <nav>
+            <button id="nav-dashboard" class="nav-btn">Dashboard</button>
+            <button id="nav-products" class="nav-btn">Products</button>
+            <button id="nav-inventory" class="nav-btn">Inventory</button>
+            <button id="nav-shopping-list" class="nav-btn">Shopping List</button>
+            <button id="nav-settings" class="nav-btn">Import / Export</button>
+        </nav>
+    </header>
+
+    <main>
+        <!-- 1. DASHBOARD SECTION -->
+        <section id="section-dashboard" class="page-section">
+            <h2>Dashboard</h2>
+            
+            <div class="metrics-grid">
+                <article class="metric-card">
+                    <h3>Total Products</h3>
+                    <p id="metric-products-count">0</p>
+                </article>
+                <article class="metric-card">
+                    <h3>Active List Items</h3>
+                    <p id="metric-shopping-count">0</p>
+                </article>
+                <article class="metric-card">
+                    <h3>Low Inventory Alerts</h3>
+                    <p id="metric-low-stock-count">0</p>
+                </article>
+            </div>
+
+            <section class="dashboard-recent">
+                <h3>Recently Added Items</h3>
+                <ul id="recent-items-list"></ul>
+            </section>
+        </section>
+
+        <!-- 2. PRODUCTS SECTION -->
+        <section id="section-products" class="page-section">
+            <h2>Product Database</h2>
+
+            <form id="add-product-form">
+                <h3>Add New Product</h3>
+                <div>
+                    <label for="prod-barcode">Barcode (UPC/EAN):</label>
+                    <input type="text" id="prod-barcode" name="barcode">
+                </div>
+                <div>
+                    <label for="prod-name">Product Name:</label>
+                    <input type="text" id="prod-name" name="productName" required>
+                </div>
+                <div>
+                    <label for="prod-brand">Brand:</label>
+                    <input type="text" id="prod-brand" name="brand">
+                </div>
+                <div>
+                    <label for="prod-category">Category:</label>
+                    <input type="text" id="prod-category" name="category">
+                </div>
+                <div>
+                    <label for="prod-qty">Initial Quantity:</label>
+                    <input type="number" id="prod-qty" name="currentQuantity" min="0" value="1" required>
+                </div>
+                <button type="submit">Save Product</button>
+            </form>
+
+            <section class="product-search-list">
+                <h3>Search Products</h3>
+                <input type="search" id="product-search-input" placeholder="Search by name, brand, or category...">
+                <div id="product-list-container"></div>
+            </section>
+        </section>
+
+        <!-- 3. INVENTORY SECTION -->
+        <section id="section-inventory" class="page-section">
+            <h2>Inventory Management</h2>
+            <div id="inventory-list-container">
+                <!-- Inventory table populated via js/app.js -->
+            </div>
+        </section>
+
+        <!-- 4. SHOPPING LIST SECTION -->
+        <section id="section-shopping-list" class="page-section">
+            <h2>Shopping List</h2>
+
+            <form id="add-shopping-item-form">
+                <div>
+                    <label for="shop-prod-select">Product:</label>
+                    <select id="shop-prod-select" required>
+                        <option value="">Select a Product...</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="shop-desired-qty">Desired Quantity:</label>
+                    <input type="number" id="shop-desired-qty" min="1" value="1" required>
+                </div>
+                <div>
+                    <label for="shop-priority">Priority:</label>
+                    <select id="shop-priority">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+                <button type="submit">Add to List</button>
+            </form>
+
+            <ul id="shopping-list-items"></ul>
+        </section>
+
+        <!-- 5. IMPORT / EXPORT & BACKUPS -->
+        <section id="section-settings" class="page-section">
+            <h2>Data Management (Import / Export)</h2>
+
+            <article class="data-box">
+                <h3>Export Application Data</h3>
+                <button id="btn-export-json">Export Full JSON Backup</button>
+                <button id="btn-export-csv">Export Products to CSV</button>
+            </article>
+
+            <article class="data-box">
+                <h3>Import Data</h3>
+                <label for="import-file-input">Select JSON or CSV File:</label>
+                <input type="file" id="import-file-input" accept=".json, .csv">
+                <button id="btn-trigger-import">Process Import</button>
+            </article>
+        </section>
+    </main>
+
+</body>
+</html>
