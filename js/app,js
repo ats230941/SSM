@@ -1,0 +1,260 @@
+// js/app.js
+import { db, addProductWithInventory } from './db.js';
+
+// Initialize App on DOM Load
+document.addEventListener('DOMContentLoaded', () => {
+    setupNavigation();
+    setupForms();
+    loadDashboardMetrics();
+    loadInventoryTable();
+    loadShoppingListSelectOptions();
+    loadShoppingListItems();
+});
+
+/* ==========================================
+   Navigation Logic (Tab Switching)
+   ========================================== */
+function setupNavigation() {
+    const navButtons = document.querySelectorAll('.nav-btn');
+    const sections = document.querySelectorAll('.page-section');
+
+    navButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetSectionId = btn.id.replace('nav-', 'section-');
+            
+            // Toggle active sections
+            sections.forEach(sec => {
+                sec.style.display = (sec.id === targetSectionId) ? 'block' : 'none';
+            });
+
+            // Refresh view data when switching tabs
+            if (targetSectionId === 'section-dashboard') loadDashboardMetrics();
+            if (targetSectionId === 'section-inventory') loadInventoryTable();
+            if (targetSectionId === 'section-shopping-list') {
+                loadShoppingListSelectOptions();
+                loadShoppingListItems();
+            }
+        });
+    });
+
+    // Default to Dashboard
+    document.getElementById('nav-dashboard').click();
+}
+
+/* ==========================================
+   Form Submission Handlers
+   ========================================== */
+function setupForms() {
+    // Add New Product
+    const addProductForm = document.getElementById('add-product-form');
+    if (addProductForm) {
+        addProductForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(addProductForm);
+            
+            const productData = {
+                barcode: formData.get('barcode'),
+                productName: formData.get('productName'),
+                brand: formData.get('brand'),
+                category: formData.get('category')
+            };
+            const qty = formData.get('currentQuantity');
+
+            try {
+                await addProductWithInventory(productData, qty);
+                addProductForm.reset();
+                alert('Product and initial inventory saved successfully!');
+                loadDashboardMetrics();
+                loadInventoryTable();
+            } catch (err) {
+                console.error('Failed to add product:', err);
+            }
+        });
+    }
+
+    // Add Shopping List Item
+    const shopForm = document.getElementById('add-shopping-item-form');
+    if (shopForm) {
+        shopForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const productId = parseInt(document.getElementById('shop-prod-select').value);
+            const desiredQty = parseInt(document.getElementById('shop-desired-qty').value);
+            const priority = document.getElementById('shop-priority').value;
+
+            await addToShoppingList(productId, desiredQty, priority);
+            shopForm.reset();
+            loadShoppingListItems();
+            loadDashboardMetrics();
+        });
+    }
+}
+
+/* ==========================================
+   Inventory & Low Stock Management Engine
+   ========================================== */
+export async function loadInventoryTable() {
+    const container = document.getElementById('inventory-list-container');
+    if (!container) return;
+
+    // Fetch products and inventory joined by productId
+    const inventoryItems = await db.inventory.toArray();
+    const products = await db.products.toArray();
+
+    if (inventoryItems.length === 0) {
+        container.innerHTML = '<p>No items in inventory. Add products to get started!</p>';
+        return;
+    }
+
+    let html = `
+        <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <thead>
+                <tr style="border-bottom: 2px solid #e5e7eb; text-align: left;">
+                    <th style="padding: 0.5rem;">Product</th>
+                    <th style="padding: 0.5rem;">Current Qty</th>
+                    <th style="padding: 0.5rem;">Min Target</th>
+                    <th style="padding: 0.5rem;">Status</th>
+                    <th style="padding: 0.5rem;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    for (const inv of inventoryItems) {
+        const prod = products.find(p => p.productId === inv.productId) || { productName: 'Unknown' };
+        const isLowStock = inv.currentQuantity <= inv.minimumDesiredQuantity;
+        
+        const statusBadge = isLowStock 
+            ? '<span style="color: #d32f2f; font-weight: bold;">⚠️ Needs Refill</span>' 
+            : '<span style="color: #2e7d32; font-weight: bold;">In Stock</span>';
+
+        html += `
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 0.75rem 0.5rem;"><strong>${prod.productName}</strong> ${prod.brand ? `(${prod.brand})` : ''}</td>
+                <td style="padding: 0.75rem 0.5rem;">
+                    <button onclick="updateQty(${inv.productId}, -1)" style="padding: 0.2rem 0.5rem;">-</button>
+                    <span style="margin: 0 0.5rem; font-weight: bold;">${inv.currentQuantity}</span>
+                    <button onclick="updateQty(${inv.productId}, 1)" style="padding: 0.2rem 0.5rem;">+</button>
+                </td>
+                <td style="padding: 0.75rem 0.5rem;">${inv.minimumDesiredQuantity}</td>
+                <td style="padding: 0.75rem 0.5rem;">${statusBadge}</td>
+                <td style="padding: 0.75rem 0.5rem;">
+                    ${isLowStock ? `<button onclick="quickAddToList(${inv.productId})" style="background-color: #2e7d32; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer;">Add to Shopping List</button>` : ''}
+                </td>
+            </tr>
+        `;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// Adjust inventory stock levels on the fly
+window.updateQty = async function(productId, delta) {
+    const record = await db.inventory.get(productId);
+    if (record) {
+        const newQty = Math.max(0, record.currentQuantity + delta);
+        await db.inventory.update(productId, { 
+            currentQuantity: newQty,
+            lastUpdated: new Date().toISOString()
+        });
+        loadInventoryTable();
+        loadDashboardMetrics();
+    }
+};
+
+// Quick-add low stock items directly to the Shopping List
+window.quickAddToList = async function(productId) {
+    const inv = await db.inventory.get(productId);
+    const targetQty = inv ? Math.max(1, inv.minimumDesiredQuantity - inv.currentQuantity) : 1;
+    
+    await addToShoppingList(productId, targetQty, 'high');
+    alert('Item added to your shopping list!');
+    loadDashboardMetrics();
+};
+
+/* ==========================================
+   Shopping List Engine
+   ========================================== */
+async function addToShoppingList(productId, desiredQuantity, priority = 'medium') {
+    // Check if item is already in list
+    const existing = await db.shoppingList.where({ productId: productId, purchased: 0 }).first();
+    
+    if (existing) {
+        await db.shoppingList.update(existing.itemId, {
+            desiredQuantity: existing.desiredQuantity + desiredQuantity
+        });
+    } else {
+        await db.shoppingList.add({
+            productId: productId,
+            desiredQuantity: desiredQuantity,
+            priority: priority,
+            purchased: 0,
+            dateAdded: new Date().toISOString()
+        });
+    }
+}
+
+async function loadShoppingListItems() {
+    const listContainer = document.getElementById('shopping-list-items');
+    if (!listContainer) return;
+
+    const items = await db.shoppingList.where('purchased').equals(0).toArray();
+    const products = await db.products.toArray();
+
+    if (items.length === 0) {
+        listContainer.innerHTML = '<li>Your shopping list is currently empty.</li>';
+        return;
+    }
+
+    listContainer.innerHTML = items.map(item => {
+        const prod = products.find(p => p.productId === item.productId) || { productName: 'Unknown' };
+        return `
+            <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #e5e7eb;">
+                <span><strong>${prod.productName}</strong> — Qty: ${item.desiredQuantity} (Priority: ${item.priority})</span>
+                <button onclick="markPurchased(${item.itemId}, ${item.productId}, ${item.desiredQuantity})" style="background-color: #2e7d32; color: white; border: none; padding: 0.3rem 0.6rem; border-radius: 4px; cursor: pointer;">Mark Purchased</button>
+            </li>
+        `;
+    }).join('');
+}
+
+window.markPurchased = async function(itemId, productId, qtyAdded) {
+    // Update shopping list item status
+    await db.shoppingList.update(itemId, { purchased: 1 });
+    
+    // Increment inventory back up automatically
+    const inv = await db.inventory.get(productId);
+    if (inv) {
+        await db.inventory.update(productId, { currentQuantity: inv.currentQuantity + qtyAdded });
+    }
+    
+    loadShoppingListItems();
+    loadDashboardMetrics();
+};
+
+async function loadShoppingListSelectOptions() {
+    const select = document.getElementById('shop-prod-select');
+    if (!select) return;
+
+    const products = await db.products.toArray();
+    select.innerHTML = '<option value="">Select a Product...</option>' + 
+        products.map(p => `<option value="${p.productId}">${p.productName}</option>`).join('');
+}
+
+/* ==========================================
+   Dashboard Metrics Update
+   ========================================== */
+async function loadDashboardMetrics() {
+    const totalProducts = await db.products.count();
+    const activeListItems = await db.shoppingList.where('purchased').equals(0).count();
+    
+    const allInventory = await db.inventory.toArray();
+    const lowStockCount = allInventory.filter(i => i.currentQuantity <= i.minimumDesiredQuantity).length;
+
+    const prodElem = document.getElementById('metric-products-count');
+    const shopElem = document.getElementById('metric-shopping-count');
+    const lowElem = document.getElementById('metric-low-stock-count');
+
+    if (prodElem) prodElem.innerText = totalProducts;
+    if (shopElem) shopElem.innerText = activeListItems;
+    if (lowElem) lowElem.innerText = lowStockCount;
+}
